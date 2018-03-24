@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Baseline;
-using FastExpressionCompiler;
 using Marten.Linq;
 using Marten.Schema.Identity;
 using Marten.Services;
@@ -78,6 +77,8 @@ namespace Marten.Schema
                 _setVersion = LambdaBuilder.SetProperty<T, Guid>(mapping.VersionMember.As<PropertyInfo>());
             }
         }
+
+        public Type TopLevelBaseType => DocumentType;
 
         public string DeleteByWhereSql { get; }
 

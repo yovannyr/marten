@@ -37,6 +37,7 @@ namespace Marten.Events
             _inner = new DocumentMapping(eventType, parent.Options);
         }
 
+        public IDocumentMapping Root => this;
         public Type DocumentType { get; }
         public string EventTypeName { get; set; }
         public string Alias { get; }
@@ -116,6 +117,8 @@ namespace Marten.Events
         {
             return this;
         }
+
+        public Type TopLevelBaseType => DocumentType;
 
         public NpgsqlCommand LoaderCommand(object id)
         {

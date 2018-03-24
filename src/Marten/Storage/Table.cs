@@ -11,6 +11,9 @@ using Npgsql;
 
 namespace Marten.Storage
 {
+    /// <summary>
+    /// Model a database table in Postgresql
+    /// </summary>
     public class Table : ISchemaObject, IEnumerable<TableColumn>
     {
         public readonly List<TableColumn> _columns = new List<TableColumn>();
@@ -19,6 +22,21 @@ namespace Marten.Storage
 
         public IList<ForeignKeyDefinition> ForeignKeys { get; } = new List<ForeignKeyDefinition>();
         public IList<IIndexDefinition> Indexes { get; } = new List<IIndexDefinition>();
+
+        public IEnumerable<DbObjectName> AllNames()
+        {
+            yield return Identifier;
+
+            foreach (var index in Indexes)
+            {
+                yield return new DbObjectName(Identifier.Schema, index.IndexName);
+            }
+
+            foreach (var fk in ForeignKeys)
+            {
+                yield return new DbObjectName(Identifier.Schema, fk.KeyName);
+            }
+        }
 
         public Table(DbObjectName name)
         {

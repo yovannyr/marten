@@ -84,12 +84,21 @@ namespace Marten.Schema
             documentType.ForAttribute<MartenAttribute>(att => att.Modify(this));
 
             documentType.GetProperties()
-                .Where(x => TypeMappings.HasTypeMapping(x.PropertyType))
+                .Where(x => !x.HasAttribute<DuplicateFieldAttribute>() && TypeMappings.HasTypeMapping(x.PropertyType))
                 .Each(prop => { prop.ForAttribute<MartenAttribute>(att => att.Modify(this, prop)); });
 
             documentType.GetFields()
-                .Where(x => TypeMappings.HasTypeMapping(x.FieldType))
+                .Where(x => !x.HasAttribute<DuplicateFieldAttribute>() && TypeMappings.HasTypeMapping(x.FieldType))
                 .Each(fieldInfo => { fieldInfo.ForAttribute<MartenAttribute>(att => att.Modify(this, fieldInfo)); });
+
+            // DuplicateFieldAttribute does not require TypeMappings check
+            documentType.GetProperties()
+                .Where(x => x.HasAttribute<DuplicateFieldAttribute>())
+                .Each(prop => { prop.ForAttribute<DuplicateFieldAttribute>(att => att.Modify(this, prop)); });
+
+            documentType.GetFields()
+                .Where(x => x.HasAttribute<DuplicateFieldAttribute>())
+                .Each(fieldInfo => { fieldInfo.ForAttribute<DuplicateFieldAttribute>(att => att.Modify(this, fieldInfo)); });
         }
 
         public bool UseOptimisticConcurrency { get; set; } = false;
@@ -228,6 +237,7 @@ namespace Marten.Schema
 
         public IIdGeneration IdStrategy { get; set; }
 
+        public IDocumentMapping Root => this;
         public Type DocumentType { get; }
 
         public virtual DbObjectName Table => new DbObjectName(DatabaseSchemaName, $"{TablePrefix}{_alias}");
@@ -492,7 +502,7 @@ namespace Marten.Schema
             var nameToAlias = documentType.Name;
             if (documentType.GetTypeInfo().IsGenericType)
             {
-                nameToAlias = _aliasSanitizer.Replace(documentType.GetPrettyName(), string.Empty);
+                nameToAlias = _aliasSanitizer.Replace(documentType.GetPrettyName(), string.Empty).Replace(",", "_");
             }
             var parts = new List<string> {nameToAlias.ToLower()};
             if (documentType.IsNested)

@@ -13,6 +13,7 @@ using Marten.Services;
 using Marten.Storage;
 using Marten.Transforms;
 using Remotion.Linq.Parsing.Structure;
+using IsolationLevel = System.Data.IsolationLevel;
 
 namespace Marten
 {
@@ -68,31 +69,26 @@ namespace Marten
         /// </summary>
         /// <param name="options"></param>
         public DocumentStore(StoreOptions options)
-        {            
+        {
             options.ApplyConfiguration();
             options.CreatePatching();
             options.Validate();
+
             Options = options;
-
             _logger = options.Logger();
-
-            Tenancy = options.Tenancy;
+            Serializer = options.Serializer();
 
             if (options.CreateDatabases != null)
             {
-                IDatabaseGenerator databaseGenerator = new DatabaseGenerator();                
+                IDatabaseGenerator databaseGenerator = new DatabaseGenerator();
                 databaseGenerator.CreateDatabases(Tenancy, options.CreateDatabases);
             }
 
-            Tenancy.Initialize();            
+            Tenancy.Initialize();
 
             Schema = Tenancy.Schema;
 
-            Storage = options.Storage;
-
             Storage.PostProcessConfiguration();
-
-            Serializer = options.Serializer();
 
             if (options.UseCharBufferPooling)
             {
@@ -110,13 +106,11 @@ namespace Marten
             Parser = new MartenExpressionParser(Serializer, options);
 
             HandlerFactory = new QueryHandlerFactory(this);
-
-            Events = options.Events;
         }
 
-        public ITenancy Tenancy { get; }
+        public ITenancy Tenancy => Options.Tenancy;
 
-        public EventGraph Events { get; }
+        public EventGraph Events => Options.Events;
 
         internal IQueryHandlerFactory HandlerFactory { get; }
 
@@ -125,7 +119,8 @@ namespace Marten
         private readonly IMartenLogger _logger;
         private readonly CharArrayTextWriter.IPool _writerPool;
 
-        public StorageFeatures Storage { get; }
+        public StorageFeatures Storage => Options.Storage;
+
         public ISerializer Serializer { get; }
 
         public virtual void Dispose()
@@ -199,8 +194,9 @@ namespace Marten
             var map = createMap(options.Tracking, sessionPool, options.Listeners);
 
             var tenant = Tenancy[options.TenantId];
-            var connection = tenant.OpenConnection(CommandRunnerMode.Transactional, options.IsolationLevel, options.Timeout);
-            
+
+            var connection = buildManagedConnection(options, tenant, CommandRunnerMode.Transactional);
+
 
             var session = new DocumentSession(this, connection, _parser, map, tenant, options.ConcurrencyChecks, options.Listeners);
             connection.BeginSession();
@@ -208,6 +204,56 @@ namespace Marten
             session.Logger = _logger.StartSession(session);
 
             return session;
+        }
+
+        private static IManagedConnection buildManagedConnection(SessionOptions options, ITenant tenant,
+            CommandRunnerMode commandRunnerMode)
+        {
+            // TODO -- this is all spaghetti code. Make this some kind of more intelligent state machine
+            // w/ the logic encapsulated into SessionOptions
+
+            // Hate crap like this, but if we don't control the transation, use External to direct
+            // IManagedConnection not to call commit or rollback
+            if (!options.OwnsTransactionLifecycle && commandRunnerMode != CommandRunnerMode.ReadOnly)
+            {
+                commandRunnerMode = CommandRunnerMode.External;
+            }
+
+
+            if (options.Connection != null || options.Transaction != null)
+            {
+                options.OwnsConnection = false;
+            }
+            if (options.Transaction != null) options.Connection = options.Transaction.Connection;
+
+
+
+#if NET46 || NETSTANDARD2_0
+            if (options.Connection == null && options.DotNetTransaction != null)
+            {
+                var connection = tenant.CreateConnection();
+                connection.Open();
+
+                options.OwnsConnection = true;
+                options.Connection = connection;
+            }
+
+            if (options.DotNetTransaction != null)
+            {
+                options.Connection.EnlistTransaction(options.DotNetTransaction);
+                options.OwnsTransactionLifecycle = false;
+            }
+#endif
+
+            if (options.Connection == null)
+            {
+                return tenant.OpenConnection(commandRunnerMode, options.IsolationLevel, options.Timeout);
+            }
+            else
+            {
+                return new ManagedConnection(options, commandRunnerMode);
+            }
+
         }
 
         internal CharArrayTextWriter.Pool CreateWriterPool()
@@ -258,15 +304,16 @@ namespace Marten
             var parser = new MartenQueryParser();
 
             var tenant = Tenancy[options.TenantId];
-            var connection = tenant.OpenConnection(CommandRunnerMode.ReadOnly, options.IsolationLevel, options.Timeout);
+
+            var connection = buildManagedConnection(options, tenant, CommandRunnerMode.ReadOnly);
 
             var session = new QuerySession(this,
                 connection, parser,
                 new NulloIdentityMap(Serializer), tenant);
 
-	        connection.BeginSession();
+            connection.BeginSession();
 
-			session.Logger = _logger.StartSession(session);
+            session.Logger = _logger.StartSession(session);
 
             return session;
         }
@@ -287,7 +334,7 @@ namespace Marten
                 connection, parser,
                 new NulloIdentityMap(Serializer), tenant);
 
-			connection.BeginSession();
+            connection.BeginSession();
 
             session.Logger = _logger.StartSession(session);
 

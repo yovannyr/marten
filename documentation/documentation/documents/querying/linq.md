@@ -187,12 +187,23 @@ a field or property matching one of many supplied values:
 
 <[sample:is_one_of]>
 
+To find one of for an array you can use this strategy:
+
+<[is_one_of_array]>
+
 ## Modulo Queries
 
 Marten v0.8 added the ability to use the modulo operator in Linq queries:
 
 <[sample:querying-with-modulo]>
 
+## AnyTenant
+Query data from all tenants using `AnyTenant` method.
+<[sample:any_tenant]>
+
+## TenantIsOneOf
+Use `TenantIsOneOf` to query on a selected list of tenants.
+<[sample:tenant_is_one_of]>
 
 ## Supported Types
 
